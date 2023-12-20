@@ -16,6 +16,3 @@ spec:
     addr: localhost:9090
 #    handshake: ""
 #    token: ""
-#    batch_size: 10000
-#    batch_size_bytes: 100000000
-#    batch_timeout: 60s

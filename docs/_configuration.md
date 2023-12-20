@@ -12,7 +12,4 @@ spec:
     # Optional parameters:
     # handshake: ""
     # token: ""
-    # batch_size: 10000 # 10K entries
-    # batch_size_bytes: 100000000 # 100 MB
-    # batch_timeout: 60s
 ```

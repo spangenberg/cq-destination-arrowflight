@@ -1,3 +1,4 @@
-/.cq
+.DS_Store
+.cq
 /bin
 /dist
