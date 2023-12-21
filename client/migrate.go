@@ -15,8 +15,8 @@ const (
 	migrateTable = "MigrateTable"
 )
 
-// MigrateTable is called when a table is created or updated
-func (c *Client) MigrateTable(ctx context.Context, msg *message.WriteMigrateTable) error {
+// migrateTable is called when a table is created or updated
+func (c *Client) migrateTable(ctx context.Context, msg *message.WriteMigrateTable) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Bool("forceMigrate", msg.MigrateForce).Msg("migrate table")
 	data, err := proto.Marshal(&pb.Write_MessageMigrateTable{

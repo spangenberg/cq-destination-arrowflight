@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"sync"
 
 	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/apache/arrow/go/v14/arrow/flight"
@@ -15,6 +12,7 @@ import (
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"github.com/cloudquery/plugin-sdk/v4/plugin"
 	"github.com/cloudquery/plugin-sdk/v4/schema"
+	"github.com/cloudquery/plugin-sdk/v4/writers/streamingbatchwriter"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,11 +22,9 @@ import (
 type Client struct {
 	logger zerolog.Logger
 	spec   Spec
+	writer *streamingbatchwriter.StreamingBatchWriter
 
-	flightClient       flight.Client
-	flightDoPutClients []flight.FlightService_DoPutClient
-	writers            map[string]*flight.Writer
-	writersLock        sync.RWMutex
+	flightClient flight.Client
 
 	plugin.UnimplementedSource
 }
@@ -38,8 +34,7 @@ var _ plugin.Client = (*Client)(nil)
 // New creates a new Apache Arrow destination client
 func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plugin.NewClientOptions) (plugin.Client, error) {
 	c := &Client{
-		logger:  logger.With().Str("module", "arrowflight").Logger(),
-		writers: make(map[string]*flight.Writer),
+		logger: logger.With().Str("module", "arrowflight").Logger(),
 	}
 	if opts.NoConnection {
 		return c, nil
@@ -50,6 +45,16 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	}
 
 	var err error
+	c.writer, err = streamingbatchwriter.New(c,
+		streamingbatchwriter.WithLogger(c.logger),
+		//streamingbatchwriter.WithBatchSizeRows(spec.BatchSizeRows),
+		//streamingbatchwriter.WithBatchSizeBytes(spec.BatchSizeBytes),
+		//streamingbatchwriter.WithBatchTimeout(spec.BatchTimeout.Duration()),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpc.WithTransportCredentials(insecure.NewCredentials())); err != nil {
 		return nil, fmt.Errorf("failed to create flight client: %w", err)
 	}
@@ -83,50 +88,14 @@ func (c *Client) Read(ctx context.Context, table *schema.Table, res chan<- arrow
 }
 
 // Write receives messages from the plugin and writes them to the destination
-func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage) error {
-	for msg := range messages {
-		switch v := msg.(type) {
-		case *message.WriteMigrateTable:
-			if err := c.MigrateTable(ctx, v); err != nil {
-				return fmt.Errorf("failed to migrate table: %w", err)
-			}
-		case *message.WriteInsert:
-			if err := c.Insert(context.Background(), v); err != nil {
-				return fmt.Errorf("failed to insert: %w", err)
-			}
-		case *message.WriteDeleteStale:
-			if err := c.DeleteStale(ctx, v); err != nil {
-				return fmt.Errorf("failed to delete stale: %w", err)
-			}
-		case *message.WriteDeleteRecord:
-			if err := c.DeleteRecord(ctx, v); err != nil {
-				return fmt.Errorf("failed to delete record: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown message type: %T", v)
-		}
-	}
-	return nil
+func (c *Client) Write(ctx context.Context, msgs <-chan message.WriteMessage) error {
+	return c.writer.Write(ctx, msgs)
 }
 
 // Close is called when the client is closed
-func (c *Client) Close(context.Context) error {
-	for _, flightDoPutClient := range c.flightDoPutClients {
-		if err := flightDoPutClient.CloseSend(); err != nil {
-			return fmt.Errorf("failed to close send: %w", err)
-		}
-		flightPutResult, err := flightDoPutClient.Recv()
-		if errors.Is(err, io.EOF) {
-			continue
-		} else if err != nil {
-			return fmt.Errorf("failed to receive put result: %w", err)
-		}
-		c.logger.Info().Str("appMetadata", string(flightPutResult.GetAppMetadata())).Msg("put result")
-	}
-	for _, writer := range c.writers {
-		if err := writer.Close(); err != nil {
-			return fmt.Errorf("failed to close writer: %w", err)
-		}
+func (c *Client) Close(ctx context.Context) error {
+	if err := c.writer.Close(ctx); err != nil {
+		return fmt.Errorf("failed to close writer: %w", err)
 	}
 	if err := c.flightClient.Close(); err != nil {
 		return fmt.Errorf("failed to close flight client: %w", err)

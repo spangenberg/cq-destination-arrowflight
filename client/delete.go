@@ -15,8 +15,8 @@ const (
 	deleteRecord = "DeleteRecord"
 )
 
-// DeleteStale is called when a record is deleted
-func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale) error {
+// deleteStale is called when a record is deleted
+func (c *Client) deleteStale(ctx context.Context, msg *message.WriteDeleteStale) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Str("sourceName", msg.SourceName).Time("syncTime", msg.SyncTime).Msg("delete stale")
 	data, err := proto.Marshal(&pb.Write_MessageDeleteStale{
@@ -35,8 +35,8 @@ func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale)
 	return nil
 }
 
-// DeleteRecord is called when a record is deleted
-func (c *Client) DeleteRecord(ctx context.Context, msg *message.WriteDeleteRecord) error {
+// deleteRecord is called when a record is deleted
+func (c *Client) deleteRecord(ctx context.Context, msg *message.WriteDeleteRecord) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Msg("delete records")
 	var whereClause []*pb.PredicatesGroup
