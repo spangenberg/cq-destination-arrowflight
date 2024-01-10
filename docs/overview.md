@@ -17,7 +17,7 @@ This destination plugin lets you sync data from a CloudQuery source to an Apache
 
 :configuration
 
-The (top level) spec section is described in the [Destination Spec Reference](/docs/reference/destination-spec).
+The (top level) spec section is described in the [Destination Spec Reference](https://www.cloudquery.io/docs/reference/destination-spec).
 
 :::callout{type="info"}
 Make sure you use environment variable expansion in production instead of committing the credentials to the configuration file directly.
