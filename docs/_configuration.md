@@ -12,4 +12,6 @@ spec:
     # Optional parameters:
     # handshake: ""
     # token: ""
+    # max_call_recv_msg_size: 10485760 # 10MB
+    # max_call_send_msg_size: 10485760 # 10MB
 ```
