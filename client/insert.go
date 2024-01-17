@@ -2,12 +2,35 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/apache/arrow/go/v15/arrow/flight"
 	"github.com/apache/arrow/go/v15/arrow/ipc"
 	"github.com/cloudquery/plugin-sdk/v4/message"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClient) {
+	c.wg.Add(1)
+	defer c.wg.Done()
+
+	for {
+		if c.closing {
+			return
+		}
+		flightPutResult, err := flightDoPutClient.Recv()
+		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
+			return
+		} else if err != nil {
+			c.logger.Error().Err(err).Msg("failed to receive put result")
+			return
+		}
+		c.logger.Info().Str("appMetadata", string(flightPutResult.GetAppMetadata())).Msg("put result")
+	}
+}
 
 // Insert is called when a record is inserted
 func (c *Client) Insert(ctx context.Context, msg *message.WriteInsert) error {
@@ -23,18 +46,19 @@ func (c *Client) Insert(ctx context.Context, msg *message.WriteInsert) error {
 
 func (c *Client) insertWriter(ctx context.Context, msg *message.WriteInsert) (*flight.Writer, error) {
 	table := msg.GetTable()
-	c.writersLock.RLock()
+	c.lock.RLock()
 	writer, ok := c.writers[table.Name]
-	c.writersLock.RUnlock()
+	c.lock.RUnlock()
 	if ok {
 		return writer, nil
 	}
-	c.writersLock.Lock()
-	defer c.writersLock.Unlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	flightDoPutClient, err := c.flightClient.DoPut(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create do put client: %w", err)
 	}
+	go c.doPutTelemetry(flightDoPutClient)
 	c.flightDoPutClients = append(c.flightDoPutClients, flightDoPutClient)
 	writer = flight.NewRecordWriter(flightDoPutClient, ipc.WithSchema(msg.Record.Schema()))
 	writer.SetFlightDescriptor(flightDescriptor(table.Name))

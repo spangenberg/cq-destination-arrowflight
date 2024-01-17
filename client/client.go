@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"sync"
 
 	"github.com/apache/arrow/go/v15/arrow"
@@ -25,10 +23,12 @@ type Client struct {
 	logger zerolog.Logger
 	spec   Spec
 
+	closing            bool
 	flightClient       flight.Client
 	flightDoPutClients []flight.FlightService_DoPutClient
+	lock               sync.RWMutex
+	wg                 sync.WaitGroup
 	writers            map[string]*flight.Writer
-	writersLock        sync.RWMutex
 
 	plugin.UnimplementedSource
 }
@@ -119,25 +119,27 @@ func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage
 
 // Close is called when the client is closed
 func (c *Client) Close(context.Context) error {
-	for _, flightDoPutClient := range c.flightDoPutClients {
-		if err := flightDoPutClient.CloseSend(); err != nil {
-			return fmt.Errorf("failed to close send: %w", err)
-		}
-		flightPutResult, err := flightDoPutClient.Recv()
-		if errors.Is(err, io.EOF) {
-			continue
-		} else if err != nil {
-			return fmt.Errorf("failed to receive put result: %w", err)
-		}
-		c.logger.Info().Str("appMetadata", string(flightPutResult.GetAppMetadata())).Msg("put result")
-	}
+	c.closing = true
+
+	c.logger.Debug().Msg("closing writers")
 	for _, writer := range c.writers {
 		if err := writer.Close(); err != nil {
-			return fmt.Errorf("failed to close writer: %w", err)
+			c.logger.Error().Err(err).Msg("failed to close writer")
 		}
 	}
+
+	c.wg.Wait()
+
+	c.logger.Debug().Msg("closing do put clients")
+	for _, flightDoPutClient := range c.flightDoPutClients {
+		if err := flightDoPutClient.CloseSend(); err != nil {
+			c.logger.Error().Err(err).Msg("failed to close send")
+		}
+	}
+
+	c.logger.Info().Msg("closing flight client")
 	if err := c.flightClient.Close(); err != nil {
-		return fmt.Errorf("failed to close flight client: %w", err)
+		c.logger.Error().Err(err).Msg("failed to close flight client")
 	}
 	return nil
 }
