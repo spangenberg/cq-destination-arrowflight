@@ -41,3 +41,13 @@ This is the (nested) spec used by the ArrowFlight destination Plugin.
 
   This parameter is used to subsequently authenticate with the ArrowFlight service in future calls.
   This parameter will be overridden by the response from the Handshake if the `handshake` parameter is specified.
+
+- `max_call_recv_msg_size` (`integer`) (optional)
+
+  This parameter is used to set the maximum message size in bytes the client can receive.
+  If this is not set, gRPC uses the default.
+
+- `max_call_send_msg_size` (`integer`) (optional)
+
+  This parameter is used to set the maximum message size in bytes the client can send.
+  If this is not set, gRPC uses the default.

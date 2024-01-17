@@ -49,8 +49,16 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 		return nil, fmt.Errorf("failed to unmarshal spec: %w", err)
 	}
 
+	var callOptions []grpc.CallOption
+	if c.spec.MaxCallRecvMsgSize != nil {
+		callOptions = append(callOptions, grpc.MaxCallRecvMsgSize(*c.spec.MaxCallRecvMsgSize))
+	}
+	if c.spec.MaxCallSendMsgSize != nil {
+		callOptions = append(callOptions, grpc.MaxCallSendMsgSize(*c.spec.MaxCallSendMsgSize))
+	}
+
 	var err error
-	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpc.WithTransportCredentials(insecure.NewCredentials())); err != nil {
+	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(callOptions...)); err != nil {
 		return nil, fmt.Errorf("failed to create flight client: %w", err)
 	}
 	if c.spec.Handshake != "" {
