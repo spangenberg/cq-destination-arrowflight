@@ -12,6 +12,7 @@ spec:
     # Optional parameters:
     # handshake: ""
     # token: ""
+    # close_timeout: 1s
     # max_call_recv_msg_size: 10485760 # 10MB
     # max_call_send_msg_size: 10485760 # 10MB
 ```

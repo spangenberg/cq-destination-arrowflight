@@ -18,9 +18,12 @@ func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClie
 	defer c.wg.Done()
 
 	for {
-		if c.closing {
+		select {
+		case <-c.done:
 			return
+		default:
 		}
+
 		flightPutResult, err := flightDoPutClient.Recv()
 		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			return
