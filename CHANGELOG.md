@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3 (2024-01-23)
+
+
+### Features
+
+* deps: Update dependencies
+* feat: Add `close_timeout` option
+
+
 ## 1.0.2 (2024-01-17)
 
 
