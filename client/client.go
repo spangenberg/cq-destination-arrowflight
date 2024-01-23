@@ -23,7 +23,7 @@ type Client struct {
 	logger zerolog.Logger
 	spec   Spec
 
-	closing            bool
+	done               chan struct{}
 	flightClient       flight.Client
 	flightDoPutClients []flight.FlightService_DoPutClient
 	lock               sync.RWMutex
@@ -39,6 +39,7 @@ var _ plugin.Client = (*Client)(nil)
 func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plugin.NewClientOptions) (plugin.Client, error) {
 	c := &Client{
 		logger:  logger.With().Str("module", "arrowflight").Logger(),
+		done:    make(chan struct{}),
 		writers: make(map[string]*flight.Writer),
 	}
 	if opts.NoConnection {
@@ -48,6 +49,7 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	if err := json.Unmarshal(specBytes, &c.spec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal spec: %w", err)
 	}
+	c.spec.SetDefaults()
 
 	var callOptions []grpc.CallOption
 	if c.spec.MaxCallRecvMsgSize != nil {
@@ -119,7 +121,7 @@ func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage
 
 // Close is called when the client is closed
 func (c *Client) Close(context.Context) error {
-	c.closing = true
+	close(c.done)
 
 	c.logger.Debug().Msg("closing writers")
 	for _, writer := range c.writers {
@@ -128,7 +130,7 @@ func (c *Client) Close(context.Context) error {
 		}
 	}
 
-	c.wg.Wait()
+	waitTimeout(&c.wg, c.spec.CloseTimeout.Duration())
 
 	c.logger.Debug().Msg("closing do put clients")
 	for _, flightDoPutClient := range c.flightDoPutClients {
