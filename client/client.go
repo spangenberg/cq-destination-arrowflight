@@ -101,7 +101,7 @@ func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage
 				return fmt.Errorf("failed to migrate table: %w", err)
 			}
 		case *message.WriteInsert:
-			if err := c.Insert(context.Background(), v); err != nil {
+			if err := c.Insert(ctx, v); err != nil {
 				return fmt.Errorf("failed to insert: %w", err)
 			}
 		case *message.WriteDeleteStale:

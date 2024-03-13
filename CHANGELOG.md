@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4 (2024-03-13)
+
+
+### Features
+
+* deps: Update dependencies
+
+
 ## 1.0.3 (2024-01-23)
 
 
