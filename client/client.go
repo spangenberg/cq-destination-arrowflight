@@ -121,6 +121,10 @@ func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage
 
 // Close is called when the client is closed
 func (c *Client) Close(context.Context) error {
+	if c.flightClient == nil {
+		return fmt.Errorf("client already closed or not initialized")
+	}
+
 	close(c.done)
 
 	c.logger.Debug().Msg("closing writers")
@@ -143,5 +147,6 @@ func (c *Client) Close(context.Context) error {
 	if err := c.flightClient.Close(); err != nil {
 		c.logger.Error().Err(err).Msg("failed to close flight client")
 	}
+	c.flightClient = nil
 	return nil
 }
