@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.5 (2024-06-14)
+
+
+### Features
+
+* deps: Bump arrow version
+* deps: Bump modules
+* feat: Guard closing client
+* feat: Add TLS options
+
+
 ## 1.0.4 (2024-03-13)
 
 
