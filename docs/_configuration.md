@@ -15,4 +15,7 @@ spec:
     # close_timeout: 1s
     # max_call_recv_msg_size: 10485760 # 10MB
     # max_call_send_msg_size: 10485760 # 10MB
+    # tls_enabled: false
+    # tls_server_name: ""
+    # tls_insecure_skip_verify: false
 ```

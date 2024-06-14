@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/arrow/go/v15/arrow/flight"
+	"github.com/apache/arrow/go/v16/arrow/flight"
 )
 
 // AuthHandler is a simple auth handler that sends a token and reads a token

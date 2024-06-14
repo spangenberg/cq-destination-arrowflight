@@ -55,3 +55,15 @@ This is the (nested) spec used by the ArrowFlight destination Plugin.
 
   This parameter is used to set the maximum message size in bytes the client can send.
   If this is not set, gRPC uses the default.
+
+- `tls_enabled` (`boolean`) (optional) (default: `false`)
+
+  This parameter is used to Enable TLS.
+
+- `tls_server_name` (`string`) (optional)
+
+  This parameter is used to set the server name used to verify the hostname on the returned certificates.
+
+- `tls_insecure_skip_verify` (`boolean`) (optional) (default: `false`)
+
+  This parameter is used to skip the verification of the server's certificate chain and host name.
