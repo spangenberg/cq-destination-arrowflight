@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/apache/arrow/go/v15/arrow/flight"
-	"github.com/apache/arrow/go/v15/arrow/ipc"
+	"github.com/apache/arrow/go/v16/arrow/flight"
+	"github.com/apache/arrow/go/v16/arrow/ipc"
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
