@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/cloudquery/plugin-sdk/v4/schema"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -51,6 +53,18 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	}
 	c.spec.SetDefaults()
 
+	var transportCredentials credentials.TransportCredentials
+	if c.spec.TlsEnabled {
+		transportCredentials = credentials.NewTLS(&tls.Config{
+			ServerName:         c.spec.TlsServerName,
+			InsecureSkipVerify: c.spec.TlsInsecureSkipVerify,
+		})
+	} else {
+		transportCredentials = insecure.NewCredentials()
+	}
+	var grpcDialOptions []grpc.DialOption
+	grpcDialOptions = append(grpcDialOptions, grpc.WithTransportCredentials(transportCredentials))
+
 	var callOptions []grpc.CallOption
 	if c.spec.MaxCallRecvMsgSize != nil {
 		callOptions = append(callOptions, grpc.MaxCallRecvMsgSize(*c.spec.MaxCallRecvMsgSize))
@@ -58,9 +72,10 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	if c.spec.MaxCallSendMsgSize != nil {
 		callOptions = append(callOptions, grpc.MaxCallSendMsgSize(*c.spec.MaxCallSendMsgSize))
 	}
+	grpcDialOptions = append(grpcDialOptions, grpc.WithDefaultCallOptions(callOptions...))
 
 	var err error
-	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(callOptions...)); err != nil {
+	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpcDialOptions...); err != nil {
 		return nil, fmt.Errorf("failed to create flight client: %w", err)
 	}
 	if c.spec.Handshake != "" {

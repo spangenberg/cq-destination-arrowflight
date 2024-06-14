@@ -20,6 +20,10 @@ type Spec struct {
 
 	MaxCallRecvMsgSize *int `json:"max_call_recv_msg_size,omitempty"`
 	MaxCallSendMsgSize *int `json:"max_call_send_msg_size,omitempty"`
+
+	TlsEnabled            bool   `json:"tls_enabled,omitempty"`
+	TlsServerName         string `json:"tls_server_name,omitempty"`
+	TlsInsecureSkipVerify bool   `json:"tls_insecure_skip_verify,omitempty"`
 }
 
 func (s *Spec) SetDefaults() {
