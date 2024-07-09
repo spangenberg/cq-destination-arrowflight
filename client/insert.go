@@ -14,16 +14,7 @@ import (
 )
 
 func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClient) {
-	c.wg.Add(1)
-	defer c.wg.Done()
-
 	for {
-		select {
-		case <-c.done:
-			return
-		default:
-		}
-
 		flightPutResult, err := flightDoPutClient.Recv()
 		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			return
@@ -35,7 +26,15 @@ func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClie
 	}
 }
 
-// Insert is called when a record is inserted
+func (c *Client) InsertBatch(ctx context.Context, messages message.WriteInserts) error {
+	for _, msg := range messages {
+		if err := c.Insert(ctx, msg); err != nil {
+			return fmt.Errorf("failed to insert: %w", err)
+		}
+	}
+	return nil
+}
+
 func (c *Client) Insert(ctx context.Context, msg *message.WriteInsert) error {
 	writer, err := c.insertWriter(ctx, msg)
 	if err != nil {
