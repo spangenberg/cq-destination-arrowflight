@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 (2025-03-13)
+
+## Features
+
+* deps: Bump arrow version
+* feat: Add reconnect on EOF
+
+
 ## 1.0.5 (2024-06-14)
 
 

@@ -42,16 +42,12 @@ This is the (nested) spec used by the ArrowFlight destination Plugin.
   This parameter is used to subsequently authenticate with the ArrowFlight service in future calls.
   This parameter will be overridden by the response from the Handshake if the `handshake` parameter is specified.
 
-- `token` (`string`) (optional)
+- `max_call_recv_msg_size` (`integer`) (optional) (default: `4194304` (= 4MB))
 
-  This parameter is used to subsequently authenticate with the ArrowFlight service in future calls.
-  This parameter will be overridden by the response from the Handshake if the `handshake` parameter is specified.
+  This parameter is used to set the maximum message size in bytes the client can receive.
+  If this is not set, gRPC uses the default.
 
-- `close_timeout` (`duration`) (optional) (default: `1s` (= 1 seconds))
-
-  This parameter controls the timeout for waiting until closing the connection.
-
-- `max_call_send_msg_size` (`integer`) (optional)
+- `max_call_send_msg_size` (`integer`) (optional) (default: `2147483647` (= 2GB))
 
   This parameter is used to set the maximum message size in bytes the client can send.
   If this is not set, gRPC uses the default.
@@ -67,3 +63,15 @@ This is the (nested) spec used by the ArrowFlight destination Plugin.
 - `tls_insecure_skip_verify` (`boolean`) (optional) (default: `false`)
 
   This parameter is used to skip the verification of the server's certificate chain and host name.
+
+- `batch_size` (`integer`) (optional) (default: `10000`)
+
+  Maximum number of items that may be grouped together to be written in a single write.
+
+- `batch_size_bytes` (`integer`) (optional) (default: `100000000` (= 100 MB))
+
+  Maximum size of items that may be grouped together to be written in a single write.
+
+- `batch_timeout` (`duration`) (optional) (default: `60s` (= 60 seconds))
+
+  Maximum interval between batch writes.

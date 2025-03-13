@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/arrow/go/v16/arrow/flight"
-	"github.com/apache/arrow/go/v16/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	pb "github.com/cloudquery/plugin-pb-go/pb/plugin/v3"
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"google.golang.org/protobuf/proto"
@@ -14,6 +14,15 @@ import (
 const (
 	migrateTable = "MigrateTable"
 )
+
+func (c *Client) MigrateTableBatch(ctx context.Context, messages message.WriteMigrateTables) error {
+	for _, msg := range messages {
+		if err := c.MigrateTable(ctx, msg); err != nil {
+			return fmt.Errorf("failed to migrate table: %w", err)
+		}
+	}
+	return nil
+}
 
 // MigrateTable is called when a table is created or updated
 func (c *Client) MigrateTable(ctx context.Context, msg *message.WriteMigrateTable) error {

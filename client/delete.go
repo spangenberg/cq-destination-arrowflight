@@ -15,7 +15,15 @@ const (
 	deleteRecord = "DeleteRecord"
 )
 
-// DeleteStale is called when a record is deleted
+func (c *Client) DeleteStaleBatch(ctx context.Context, messages message.WriteDeleteStales) error {
+	for _, msg := range messages {
+		if err := c.DeleteStale(ctx, msg); err != nil {
+			return fmt.Errorf("failed to delete stale: %w", err)
+		}
+	}
+	return nil
+}
+
 func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Str("sourceName", msg.SourceName).Time("syncTime", msg.SyncTime).Msg("delete stale")
@@ -35,12 +43,20 @@ func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale)
 	return nil
 }
 
-// DeleteRecord is called when a record is deleted
+func (c *Client) DeleteRecordsBatch(ctx context.Context, messages message.WriteDeleteRecords) error {
+	for _, msg := range messages {
+		if err := c.DeleteRecord(ctx, msg); err != nil {
+			return fmt.Errorf("failed to delete records: %w", err)
+		}
+	}
+	return nil
+}
+
 func (c *Client) DeleteRecord(ctx context.Context, msg *message.WriteDeleteRecord) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Msg("delete records")
-	var whereClause []*pb.PredicatesGroup
-	for _, predicateGroup := range msg.WhereClause {
+	whereClause := make([]*pb.PredicatesGroup, len(msg.WhereClause))
+	for i, predicateGroup := range msg.WhereClause {
 		var predicates []*pb.Predicate
 		for _, predicate := range predicateGroup.Predicates {
 			record, err := pb.RecordToBytes(predicate.Record)
@@ -55,17 +71,17 @@ func (c *Client) DeleteRecord(ctx context.Context, msg *message.WriteDeleteRecor
 			})
 		}
 		groupingType := pb.PredicatesGroup_GroupingType(pb.PredicatesGroup_GroupingType_value[predicateGroup.GroupingType])
-		whereClause = append(whereClause, &pb.PredicatesGroup{
+		whereClause[i] = &pb.PredicatesGroup{
 			GroupingType: groupingType,
 			Predicates:   predicates,
-		})
+		}
 	}
-	var tableRelations []*pb.TableRelation
-	for _, tableRelation := range msg.TableRelations {
-		tableRelations = append(tableRelations, &pb.TableRelation{
+	tableRelations := make([]*pb.TableRelation, len(msg.TableRelations))
+	for i, tableRelation := range msg.TableRelations {
+		tableRelations[i] = &pb.TableRelation{
 			TableName:   tableRelation.TableName,
 			ParentTable: tableRelation.ParentTable,
-		})
+		}
 	}
 	data, err := proto.Marshal(&pb.Write_MessageDeleteRecord{
 		TableName:      table.Name,

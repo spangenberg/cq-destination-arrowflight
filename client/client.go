@@ -1,47 +1,42 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"sync"
 
-	"github.com/apache/arrow/go/v16/arrow"
-	"github.com/apache/arrow/go/v16/arrow/flight"
-	"github.com/apache/arrow/go/v16/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"github.com/cloudquery/plugin-sdk/v4/plugin"
-	"github.com/cloudquery/plugin-sdk/v4/schema"
+	"github.com/cloudquery/plugin-sdk/v4/writers/mixedbatchwriter"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/spangenberg/cq-destination-arrowflight/client/spec"
 )
 
-// Client is the client for the Apache Arrow destination
 type Client struct {
-	logger zerolog.Logger
-	spec   Spec
-
-	done               chan struct{}
+	logger             zerolog.Logger
+	writer             *mixedbatchwriter.MixedBatchWriter
+	lock               sync.RWMutex
 	flightClient       flight.Client
 	flightDoPutClients []flight.FlightService_DoPutClient
-	lock               sync.RWMutex
-	wg                 sync.WaitGroup
 	writers            map[string]*flight.Writer
+	spec               spec.Spec
 
 	plugin.UnimplementedSource
 }
 
+// Assert Client implements plugin.Client interface.
 var _ plugin.Client = (*Client)(nil)
 
-// New creates a new Apache Arrow destination client
 func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plugin.NewClientOptions) (plugin.Client, error) {
 	c := &Client{
 		logger:  logger.With().Str("module", "arrowflight").Logger(),
-		done:    make(chan struct{}),
 		writers: make(map[string]*flight.Writer),
 	}
 	if opts.NoConnection {
@@ -49,9 +44,37 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	}
 
 	if err := json.Unmarshal(specBytes, &c.spec); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal spec: %w", err)
+		return nil, err
 	}
 	c.spec.SetDefaults()
+	if err := c.spec.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := c.reconnect(ctx); err != nil {
+		return nil, err
+	}
+
+	{
+		var err error
+		if c.writer, err = mixedbatchwriter.New(c,
+			mixedbatchwriter.WithLogger(c.logger),
+			mixedbatchwriter.WithBatchSize(c.spec.BatchSize),
+			mixedbatchwriter.WithBatchSizeBytes(c.spec.BatchSizeBytes),
+			mixedbatchwriter.WithBatchTimeout(c.spec.BatchTimeout.Duration()),
+		); err != nil {
+			return nil, fmt.Errorf("failed to create mixed batch writer: %w", err)
+		}
+	}
+
+	return c, nil
+}
+
+func (c *Client) reconnect(ctx context.Context) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	_ = c.Close(ctx)
 
 	var transportCredentials credentials.TransportCredentials
 	if c.spec.TlsEnabled {
@@ -62,85 +85,39 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	} else {
 		transportCredentials = insecure.NewCredentials()
 	}
-	var grpcDialOptions []grpc.DialOption
-	grpcDialOptions = append(grpcDialOptions, grpc.WithTransportCredentials(transportCredentials))
+	grpcDialOptions := []grpc.DialOption{
+		grpc.WithTransportCredentials(transportCredentials),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(c.spec.MaxCallRecvMsgSize),
+			grpc.MaxCallSendMsgSize(c.spec.MaxCallSendMsgSize),
+		),
+	}
 
-	var callOptions []grpc.CallOption
-	if c.spec.MaxCallRecvMsgSize != nil {
-		callOptions = append(callOptions, grpc.MaxCallRecvMsgSize(*c.spec.MaxCallRecvMsgSize))
-	}
-	if c.spec.MaxCallSendMsgSize != nil {
-		callOptions = append(callOptions, grpc.MaxCallSendMsgSize(*c.spec.MaxCallSendMsgSize))
-	}
-	grpcDialOptions = append(grpcDialOptions, grpc.WithDefaultCallOptions(callOptions...))
-
-	var err error
-	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, NewAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpcDialOptions...); err != nil {
-		return nil, fmt.Errorf("failed to create flight client: %w", err)
-	}
-	if c.spec.Handshake != "" {
-		if err = c.flightClient.Authenticate(ctx); err != nil {
-			return nil, fmt.Errorf("failed to authenticate flight client: %w", err)
+	{
+		var err error
+		if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, newAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpcDialOptions...); err != nil {
+			return fmt.Errorf("failed to create flight client: %w", err)
 		}
 	}
+	if len(c.spec.Handshake) == 0 {
+		return nil
+	}
 
-	return c, nil
-}
+	if err := c.flightClient.Authenticate(ctx); err != nil {
+		return fmt.Errorf("failed to authenticate flight client: %w", err)
+	}
 
-// Read is called when a table is read
-func (c *Client) Read(ctx context.Context, table *schema.Table, res chan<- arrow.Record) error {
-	c.logger.Debug().Str("table", table.Name).Msg("read")
-	flightInfo, err := c.getFlightInfo(ctx, table.Name)
-	if err != nil {
-		return fmt.Errorf("failed to get flight info: %w", err)
-	}
-	var reader *ipc.Reader
-	if reader, err = ipc.NewReader(bytes.NewReader(flightInfo.GetSchema())); err != nil {
-		return fmt.Errorf("failed to create reader: %w", err)
-	}
-	defer reader.Release()
-	for _, endpoint := range flightInfo.GetEndpoint() {
-		if err = c.doGet(ctx, endpoint, reader.Schema(), res); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
-// Write receives messages from the plugin and writes them to the destination
-func (c *Client) Write(ctx context.Context, messages <-chan message.WriteMessage) error {
-	for msg := range messages {
-		switch v := msg.(type) {
-		case *message.WriteMigrateTable:
-			if err := c.MigrateTable(ctx, v); err != nil {
-				return fmt.Errorf("failed to migrate table: %w", err)
-			}
-		case *message.WriteInsert:
-			if err := c.Insert(ctx, v); err != nil {
-				return fmt.Errorf("failed to insert: %w", err)
-			}
-		case *message.WriteDeleteStale:
-			if err := c.DeleteStale(ctx, v); err != nil {
-				return fmt.Errorf("failed to delete stale: %w", err)
-			}
-		case *message.WriteDeleteRecord:
-			if err := c.DeleteRecord(ctx, v); err != nil {
-				return fmt.Errorf("failed to delete record: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown message type: %T", v)
-		}
-	}
-	return nil
+func (c *Client) Write(ctx context.Context, res <-chan message.WriteMessage) error {
+	return c.writer.Write(ctx, res)
 }
 
-// Close is called when the client is closed
 func (c *Client) Close(context.Context) error {
 	if c.flightClient == nil {
 		return fmt.Errorf("client already closed or not initialized")
 	}
-
-	close(c.done)
 
 	c.logger.Debug().Msg("closing writers")
 	for _, writer := range c.writers {
@@ -148,8 +125,6 @@ func (c *Client) Close(context.Context) error {
 			c.logger.Error().Err(err).Msg("failed to close writer")
 		}
 	}
-
-	waitTimeout(&c.wg, c.spec.CloseTimeout.Duration())
 
 	c.logger.Debug().Msg("closing do put clients")
 	for _, flightDoPutClient := range c.flightDoPutClients {
@@ -162,6 +137,7 @@ func (c *Client) Close(context.Context) error {
 	if err := c.flightClient.Close(); err != nil {
 		c.logger.Error().Err(err).Msg("failed to close flight client")
 	}
+
 	c.flightClient = nil
 	return nil
 }

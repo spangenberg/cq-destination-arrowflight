@@ -6,28 +6,32 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/apache/arrow/go/v16/arrow/flight"
-	"github.com/apache/arrow/go/v16/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClient) {
-	c.wg.Add(1)
-	defer c.wg.Done()
-
+func (c *Client) doPutTelemetry(ctx context.Context, flightDoPutClient flight.FlightService_DoPutClient) {
 	for {
 		select {
-		case <-c.done:
+		case <-ctx.Done():
+			c.logger.Debug().Msg("stopping telemetry processing")
 			return
 		default:
 		}
 
 		flightPutResult, err := flightDoPutClient.Recv()
-		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
+		code := status.Code(err)
+		if errors.Is(err, io.EOF) || code == codes.Canceled {
 			return
 		} else if err != nil {
+			if code == codes.Unavailable || code == codes.ResourceExhausted {
+				c.logger.Warn().Err(err).Msg("transient error receiving telemetry, will retry")
+				continue
+			}
+
 			c.logger.Error().Err(err).Msg("failed to receive put result")
 			return
 		}
@@ -35,13 +39,30 @@ func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClie
 	}
 }
 
-// Insert is called when a record is inserted
+func (c *Client) InsertBatch(ctx context.Context, messages message.WriteInserts) error {
+	for _, msg := range messages {
+		if err := c.Insert(ctx, msg); err != nil {
+			return fmt.Errorf("failed to insert: %w", err)
+		}
+	}
+	return nil
+}
+
 func (c *Client) Insert(ctx context.Context, msg *message.WriteInsert) error {
 	writer, err := c.insertWriter(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("failed to get writer: %w", err)
 	}
-	if err = writer.Write(msg.Record); err != nil {
+	if writer == nil {
+		return c.Insert(ctx, msg)
+	}
+	if err = writer.Write(msg.Record); errors.Is(err, io.EOF) {
+		c.logger.Warn().Err(err).Msg("writer is closed")
+		if reconnectErr := c.reconnect(ctx); reconnectErr != nil {
+			return errors.Join(err, reconnectErr)
+		}
+		return c.Insert(ctx, msg)
+	} else if err != nil {
 		return fmt.Errorf("failed to write: %w", err)
 	}
 	return nil
@@ -61,7 +82,7 @@ func (c *Client) insertWriter(ctx context.Context, msg *message.WriteInsert) (*f
 	if err != nil {
 		return nil, fmt.Errorf("failed to create do put client: %w", err)
 	}
-	go c.doPutTelemetry(flightDoPutClient)
+	go c.doPutTelemetry(ctx, flightDoPutClient)
 	c.flightDoPutClients = append(c.flightDoPutClients, flightDoPutClient)
 	writer = flight.NewRecordWriter(flightDoPutClient, ipc.WithSchema(msg.Record.Schema()))
 	writer.SetFlightDescriptor(flightDescriptor(table.Name))
