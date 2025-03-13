@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/arrow/go/v16/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/flight"
 )
 
 type authHandler struct {

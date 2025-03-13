@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/apache/arrow/go/v16/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/cloudquery/plugin-sdk/v4/message"
 	"github.com/cloudquery/plugin-sdk/v4/plugin"
 	"github.com/cloudquery/plugin-sdk/v4/writers/mixedbatchwriter"
