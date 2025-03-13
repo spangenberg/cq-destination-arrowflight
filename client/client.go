@@ -26,6 +26,7 @@ type Client struct {
 	flightClient       flight.Client
 	flightDoPutClients []flight.FlightService_DoPutClient
 	writers            map[string]*flight.Writer
+	spec               spec.Spec
 
 	plugin.UnimplementedSource
 }
@@ -42,20 +43,44 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 		return c, nil
 	}
 
-	var s spec.Spec
-	if err := json.Unmarshal(specBytes, &s); err != nil {
+	if err := json.Unmarshal(specBytes, &c.spec); err != nil {
 		return nil, err
 	}
-	s.SetDefaults()
-	if err := s.Validate(); err != nil {
+	c.spec.SetDefaults()
+	if err := c.spec.Validate(); err != nil {
 		return nil, err
 	}
 
+	if err := c.reconnect(ctx); err != nil {
+		return nil, err
+	}
+
+	{
+		var err error
+		if c.writer, err = mixedbatchwriter.New(c,
+			mixedbatchwriter.WithLogger(c.logger),
+			mixedbatchwriter.WithBatchSize(c.spec.BatchSize),
+			mixedbatchwriter.WithBatchSizeBytes(c.spec.BatchSizeBytes),
+			mixedbatchwriter.WithBatchTimeout(c.spec.BatchTimeout.Duration()),
+		); err != nil {
+			return nil, fmt.Errorf("failed to create mixed batch writer: %w", err)
+		}
+	}
+
+	return c, nil
+}
+
+func (c *Client) reconnect(ctx context.Context) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	_ = c.Close(ctx)
+
 	var transportCredentials credentials.TransportCredentials
-	if s.TlsEnabled {
+	if c.spec.TlsEnabled {
 		transportCredentials = credentials.NewTLS(&tls.Config{
-			ServerName:         s.TlsServerName,
-			InsecureSkipVerify: s.TlsInsecureSkipVerify,
+			ServerName:         c.spec.TlsServerName,
+			InsecureSkipVerify: c.spec.TlsInsecureSkipVerify,
 		})
 	} else {
 		transportCredentials = insecure.NewCredentials()
@@ -63,32 +88,26 @@ func New(ctx context.Context, logger zerolog.Logger, specBytes []byte, opts plug
 	grpcDialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(transportCredentials),
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(s.MaxCallRecvMsgSize),
-			grpc.MaxCallSendMsgSize(s.MaxCallSendMsgSize),
+			grpc.MaxCallRecvMsgSize(c.spec.MaxCallRecvMsgSize),
+			grpc.MaxCallSendMsgSize(c.spec.MaxCallSendMsgSize),
 		),
 	}
 
-	var err error
-	if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, s.Addr, newAuthHandler(s.Handshake, s.Token), nil, grpcDialOptions...); err != nil {
-		return nil, fmt.Errorf("failed to create flight client: %w", err)
-	}
-	if len(s.Handshake) > 0 {
-		if err = c.flightClient.Authenticate(ctx); err != nil {
-			return nil, fmt.Errorf("failed to authenticate flight client: %w", err)
+	{
+		var err error
+		if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, newAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpcDialOptions...); err != nil {
+			return fmt.Errorf("failed to create flight client: %w", err)
 		}
 	}
-
-	c.writer, err = mixedbatchwriter.New(c,
-		mixedbatchwriter.WithLogger(c.logger),
-		mixedbatchwriter.WithBatchSize(s.BatchSize),
-		mixedbatchwriter.WithBatchSizeBytes(s.BatchSizeBytes),
-		mixedbatchwriter.WithBatchTimeout(s.BatchTimeout.Duration()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create mixed batch writer: %w", err)
+	if len(c.spec.Handshake) == 0 {
+		return nil
 	}
 
-	return c, nil
+	if err := c.flightClient.Authenticate(ctx); err != nil {
+		return fmt.Errorf("failed to authenticate flight client: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) Write(ctx context.Context, res <-chan message.WriteMessage) error {

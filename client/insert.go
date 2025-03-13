@@ -53,7 +53,16 @@ func (c *Client) Insert(ctx context.Context, msg *message.WriteInsert) error {
 	if err != nil {
 		return fmt.Errorf("failed to get writer: %w", err)
 	}
-	if err = writer.Write(msg.Record); err != nil {
+	if writer == nil {
+		return c.Insert(ctx, msg)
+	}
+	if err = writer.Write(msg.Record); errors.Is(err, io.EOF) {
+		c.logger.Warn().Err(err).Msg("writer is closed")
+		if reconnectErr := c.reconnect(ctx); reconnectErr != nil {
+			return errors.Join(err, reconnectErr)
+		}
+		return c.Insert(ctx, msg)
+	} else if err != nil {
 		return fmt.Errorf("failed to write: %w", err)
 	}
 	return nil
