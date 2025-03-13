@@ -13,12 +13,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (c *Client) doPutTelemetry(flightDoPutClient flight.FlightService_DoPutClient) {
+func (c *Client) doPutTelemetry(ctx context.Context, flightDoPutClient flight.FlightService_DoPutClient) {
 	for {
+		select {
+		case <-ctx.Done():
+			c.logger.Debug().Msg("stopping telemetry processing")
+			return
+		default:
+		}
+
 		flightPutResult, err := flightDoPutClient.Recv()
-		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
+		code := status.Code(err)
+		if errors.Is(err, io.EOF) || code == codes.Canceled {
 			return
 		} else if err != nil {
+			if code == codes.Unavailable || code == codes.ResourceExhausted {
+				c.logger.Warn().Err(err).Msg("transient error receiving telemetry, will retry")
+				continue
+			}
+
 			c.logger.Error().Err(err).Msg("failed to receive put result")
 			return
 		}
@@ -60,7 +73,7 @@ func (c *Client) insertWriter(ctx context.Context, msg *message.WriteInsert) (*f
 	if err != nil {
 		return nil, fmt.Errorf("failed to create do put client: %w", err)
 	}
-	go c.doPutTelemetry(flightDoPutClient)
+	go c.doPutTelemetry(ctx, flightDoPutClient)
 	c.flightDoPutClients = append(c.flightDoPutClients, flightDoPutClient)
 	writer = flight.NewRecordWriter(flightDoPutClient, ipc.WithSchema(msg.Record.Schema()))
 	writer.SetFlightDescriptor(flightDescriptor(table.Name))
