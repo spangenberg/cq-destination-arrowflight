@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -29,6 +30,7 @@ func (c *Client) doPutTelemetry(ctx context.Context, flightDoPutClient flight.Fl
 		} else if err != nil {
 			if code == codes.Unavailable || code == codes.ResourceExhausted {
 				c.logger.Warn().Err(err).Msg("transient error receiving telemetry, will retry")
+				time.Sleep(time.Second)
 				continue
 			}
 
@@ -78,12 +80,14 @@ func (c *Client) insertWriter(ctx context.Context, msg *message.WriteInsert) (*f
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	c.logger.Info().Str("table", table.Name).Msg("creating do put client")
 	flightDoPutClient, err := c.flightClient.DoPut(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create do put client: %w", err)
 	}
 	go c.doPutTelemetry(ctx, flightDoPutClient)
 	c.flightDoPutClients = append(c.flightDoPutClients, flightDoPutClient)
+	c.logger.Info().Str("table", table.Name).Msg("creating record writer")
 	writer = flight.NewRecordWriter(flightDoPutClient, ipc.WithSchema(msg.Record.Schema()))
 	writer.SetFlightDescriptor(flightDescriptor(table.Name))
 	c.writers[table.Name] = writer

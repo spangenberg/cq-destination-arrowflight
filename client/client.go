@@ -93,19 +93,24 @@ func (c *Client) reconnect(ctx context.Context) error {
 		),
 	}
 
+	c.logger.Info().Msg("connecting to flight server")
 	{
 		var err error
 		if c.flightClient, err = flight.NewClientWithMiddlewareCtx(ctx, c.spec.Addr, newAuthHandler(c.spec.Handshake, c.spec.Token), nil, grpcDialOptions...); err != nil {
 			return fmt.Errorf("failed to create flight client: %w", err)
 		}
 	}
+	c.logger.Info().Msg("connected to flight server")
+
 	if len(c.spec.Handshake) == 0 {
 		return nil
 	}
 
+	c.logger.Info().Msg("authenticating flight client")
 	if err := c.flightClient.Authenticate(ctx); err != nil {
 		return fmt.Errorf("failed to authenticate flight client: %w", err)
 	}
+	c.logger.Info().Msg("authenticated flight client")
 
 	return nil
 }
@@ -125,6 +130,7 @@ func (c *Client) Close(context.Context) error {
 			c.logger.Error().Err(err).Msg("failed to close writer")
 		}
 	}
+	clear(c.writers)
 
 	c.logger.Debug().Msg("closing do put clients")
 	for _, flightDoPutClient := range c.flightDoPutClients {
@@ -132,6 +138,7 @@ func (c *Client) Close(context.Context) error {
 			c.logger.Error().Err(err).Msg("failed to close send")
 		}
 	}
+	c.flightDoPutClients = nil
 
 	c.logger.Info().Msg("closing flight client")
 	if err := c.flightClient.Close(); err != nil {
