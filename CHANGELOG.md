@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 (2025-06-23)
+
+## Fixes
+
+* fix: Remove batch writer
+
 ## 1.1.1 (2025-03-13)
 
 ## Fixes
