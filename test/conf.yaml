@@ -10,9 +10,9 @@ spec:
 kind: destination
 spec:
   name: arrowflight
-  registry: local
-  path: bin/arrowflight
+  registry: grpc
+  path: localhost:7777
   spec:
     addr: localhost:9090
-#    handshake: ""
+    handshake: "foobar"
 #    token: ""

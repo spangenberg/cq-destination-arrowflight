@@ -63,15 +63,3 @@ This is the (nested) spec used by the ArrowFlight destination Plugin.
 - `tls_insecure_skip_verify` (`boolean`) (optional) (default: `false`)
 
   This parameter is used to skip the verification of the server's certificate chain and host name.
-
-- `batch_size` (`integer`) (optional) (default: `10000`)
-
-  Maximum number of items that may be grouped together to be written in a single write.
-
-- `batch_size_bytes` (`integer`) (optional) (default: `100000000` (= 100 MB))
-
-  Maximum size of items that may be grouped together to be written in a single write.
-
-- `batch_timeout` (`duration`) (optional) (default: `60s` (= 60 seconds))
-
-  Maximum interval between batch writes.
