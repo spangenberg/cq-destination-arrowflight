@@ -15,15 +15,6 @@ const (
 	migrateTable = "MigrateTable"
 )
 
-func (c *Client) MigrateTableBatch(ctx context.Context, messages message.WriteMigrateTables) error {
-	for _, msg := range messages {
-		if err := c.MigrateTable(ctx, msg); err != nil {
-			return fmt.Errorf("failed to migrate table: %w", err)
-		}
-	}
-	return nil
-}
-
 // MigrateTable is called when a table is created or updated
 func (c *Client) MigrateTable(ctx context.Context, msg *message.WriteMigrateTable) error {
 	table := msg.GetTable()

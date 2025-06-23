@@ -3,11 +3,6 @@
   "$id": "https://github.com/spangenberg/cq-destination-arrowflight/client/spec/spec",
   "$ref": "#/$defs/Spec",
   "$defs": {
-    "Duration": {
-      "type": "string",
-      "pattern": "^[-+]?([0-9]*(\\.[0-9]*)?[a-z]+)+$",
-      "title": "CloudQuery configtype.Duration"
-    },
     "Spec": {
       "properties": {
         "addr": {
@@ -48,23 +43,6 @@
         "tls_insecure_skip_verify": {
           "type": "boolean",
           "description": "This parameter is used to skip the verification of the server's certificate chain and host name."
-        },
-        "batch_size": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Maximum number of items that may be grouped together to be written in a single write.",
-          "default": 10000
-        },
-        "batch_size_bytes": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Maximum size of items that may be grouped together to be written in a single write.",
-          "default": 100000000
-        },
-        "batch_timeout": {
-          "$ref": "#/$defs/Duration",
-          "description": "Maximum interval between batch writes.",
-          "default": "60s"
         }
       },
       "additionalProperties": false,

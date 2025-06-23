@@ -15,15 +15,6 @@ const (
 	deleteRecord = "DeleteRecord"
 )
 
-func (c *Client) DeleteStaleBatch(ctx context.Context, messages message.WriteDeleteStales) error {
-	for _, msg := range messages {
-		if err := c.DeleteStale(ctx, msg); err != nil {
-			return fmt.Errorf("failed to delete stale: %w", err)
-		}
-	}
-	return nil
-}
-
 func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale) error {
 	table := msg.GetTable()
 	c.logger.Debug().Str("tableName", table.Name).Str("sourceName", msg.SourceName).Time("syncTime", msg.SyncTime).Msg("delete stale")
@@ -40,15 +31,6 @@ func (c *Client) DeleteStale(ctx context.Context, msg *message.WriteDeleteStale)
 		return fmt.Errorf("failed to doAction: %w", err)
 	}
 	c.logger.Debug().Str("body", string(body)).Msg("delete stale result")
-	return nil
-}
-
-func (c *Client) DeleteRecordsBatch(ctx context.Context, messages message.WriteDeleteRecords) error {
-	for _, msg := range messages {
-		if err := c.DeleteRecord(ctx, msg); err != nil {
-			return fmt.Errorf("failed to delete records: %w", err)
-		}
-	}
 	return nil
 }
 
