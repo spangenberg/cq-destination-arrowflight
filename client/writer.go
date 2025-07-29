@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -55,6 +56,18 @@ func (w *Writer) Close() error {
 }
 
 func (w *Writer) Write(ctx context.Context, msg *message.WriteInsert) error {
+	var size int
+	{
+		var err error
+		if size, err = recordSize(msg.Record); err != nil {
+			return fmt.Errorf("failed to calculate record size: %w", err)
+		}
+	}
+	if size > w.client.spec.MaxCallSendMsgSize {
+		w.client.logger.Warn().Msg("record size exceeds max call send msg size, skipping write")
+		return nil
+	}
+
 	return w.writeWithRetries(ctx, msg.Record, 1)
 }
 
@@ -169,4 +182,16 @@ func (c *Client) getWriter(msg *message.WriteInsert) (*Writer, bool) {
 
 	writer, ok := c.writers[tableName]
 	return writer, ok
+}
+
+func recordSize(rec arrow.Record) (int, error) {
+	var buf bytes.Buffer
+	writer := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
+	defer func(writer *ipc.Writer) {
+		_ = writer.Close()
+	}(writer)
+	if err := writer.Write(rec); err != nil {
+		return -1, fmt.Errorf("failed to write record: %w", err)
+	}
+	return buf.Len(), nil
 }
