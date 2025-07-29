@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 (2025-07-29)
+
+## Features
+
+* feat: Skip messages past max size
+
 ## 1.2.0 (2025-06-23)
 
 ## Fixes
